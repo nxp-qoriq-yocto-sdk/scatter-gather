@@ -1,0 +1,25 @@
+ARM's Trace Memory Controller can use tables in memory to find the addresses
+of pages of memory to use for trace storage. All pages are 4KB and each is
+referenced by a single entry in the tables. The tables form a linked list,
+to ensure that the tables themselves are not required to be larger than 4KB.
+
+These tables are called 'scatter-gather tables'. The entries are always 32-bit:
+
+Bits	Description
+
+[31:4]	Bits [39:12] of an address. Bits [11:0] are always zero.
+	The meaning of this field is dependent on the entry type.
+[3:2]	Reserved.
+[1:0]	Entry type:
+
+	00 Reserved.
+	01 Last. The address points to a 4KB page to use for buffer storage
+	   and this is the last entry in the tables.
+	10 Normal. The address points to a 4KB page to use for buffer storage
+	   and the next entry in the table is valid. The entry must not be
+	   the last entry in a 4KB page.
+	11 Link. The address points to the base of a further 4KB page of table
+	   entries.
+
+The module implements the whole scatter-gather logic for multiple tables and
+keeps track of them with a linked list.
