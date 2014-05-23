@@ -82,7 +82,7 @@ static phys_addr_t calculate_entry(unsigned long addr_virt, unsigned int type)
  * Walks the table, allocates pages and indexes them. The table walk stops when
  * all of the pages have been allocated. It always initializes an entry with 0,
  * as a hack to the case when one of the allocations has failed. This helps
- * unreserve() to know when to stop the table walk.
+ * unreserve_entries() to know when to stop the table walk.
  *
  * Return: 0 or -ENOMEM, if any of the allocations fail.
  */
@@ -250,12 +250,12 @@ static int reserve(uint64_t size, phys_addr_t *table_addr_phys)
 	if (!table_addr_virt)
 		return -ENOMEM;
 
-	result = reserve_entries(table_addr_virt, pages);
+	*table_addr_phys = virt_to_phys((void *) table_addr_virt);
+	result = add_list_entry(*table_addr_phys, size);
 	if (result)
 		goto out;
 
-	*table_addr_phys = virt_to_phys((void *) table_addr_virt);
-	result = add_list_entry(*table_addr_phys, size);
+	result = reserve_entries(table_addr_virt, pages);
 	if (result)
 		goto out;
 
