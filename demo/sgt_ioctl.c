@@ -19,7 +19,7 @@ int main(void)
 {
 	int fd;
 	int ret;
-	struct sgt_buffer buffer0, buffer1, buffer2;
+	struct sgt_buffer buffer0, buffer1, buffer2, buffer3;
 
 	fd = open(ABS_FILE_PATH, O_RDONLY);
 	if (fd < 0) {
@@ -44,14 +44,23 @@ int main(void)
 	}
 	printf("First table address: %llx\n", buffer1.address);
 
-	/* Allocate large buffer - 400MB. */
-	buffer2.size = 400 * MB;
+	/* Allocate medium buffer - 20MB. */
+	buffer2.size = 20 * MB;
 	ret = ioctl(fd, SGT_RESERVE, &buffer2);
 	if (ret < 0) {
 		report_error("ioctl");
 		return -1;
 	}
 	printf("Second table address: %llx\n", buffer2.address);
+
+	/* Allocate large buffer - 400MB. */
+	buffer3.size = 400 * MB;
+	ret = ioctl(fd, SGT_RESERVE, &buffer3);
+	if (ret < 0) {
+		report_error("ioctl");
+		return -1;
+	}
+	printf("Third table address: %llx\n", buffer3.address);
 
 	/* Deallocate one of the buffers. */
 	ret = ioctl(fd, SGT_UNRESERVE, &buffer2);
