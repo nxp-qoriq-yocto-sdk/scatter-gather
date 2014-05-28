@@ -19,15 +19,27 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-KDIR = /lib/modules/`uname -r`/build
+ccflags-y = -Wall -g
 
-kbuild:
-	make -C $(KDIR) M=`pwd`
+obj-m = sgt.o
+sgt-objs = scatter-gather.o sgt_list.o
 
-.PHONY: demo
+KERNEL_SRC = /lib/modules/`uname -r`/build
+SRC := $(shell pwd)
+
+.PHONY: build modules_install demo clean
+
+all: build
+
+build:
+	$(MAKE) -C $(KERNEL_SRC) M=$(SRC)
+
+modules_install:
+	$(MAKE) -C $(KERNEL_SRC) M=$(SRC) modules_install
+
 demo:
-	make -C demo
+	$(MAKE) -C demo
 
 clean:
-	make -C $(KDIR) M=`pwd` clean
-	make -C demo clean
+	$(MAKE) -C $(KERNEL_SRC) M=$(SRC) clean
+	$(MAKE) -C demo clean
