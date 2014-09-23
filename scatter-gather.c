@@ -29,10 +29,11 @@
 #define ENTRIES_PER_TABLE	(PAGE_SIZE / sizeof(unsigned long))
 
 #define LAST_ENTRY		1
-#define NORMAL_ENTRY		2
+#define NORMAL_ENTRY	2
 #define LINK_ENTRY		3
 
-#define ADDR_SHIFT		8
+#define ADDR_SHIFT		4
+#define TYPE_MASK		0x3
 
 static struct dentry *sgt_debugfs_dir;
 
@@ -89,8 +90,10 @@ static phys_addr_t calculate_entry(unsigned long addr_virt, unsigned int type)
 	phys_addr_t addr_phys;
 
 	addr_phys = virt_to_phys((void *) addr_virt);
-	addr_phys >>= ADDR_SHIFT;
-	addr_phys |= type;
+	/* Page address */
+	addr_phys >>= PAGE_SHIFT;
+	addr_phys <<= ADDR_SHIFT;
+	addr_phys |= (type & TYPE_MASK);
 
 	return addr_phys;
 }
