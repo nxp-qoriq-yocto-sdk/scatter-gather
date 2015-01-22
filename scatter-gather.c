@@ -85,7 +85,7 @@ static unsigned int calculate_tables(unsigned int pages)
  *
  * Return: The physical address of the indexed page, encoded with an entry type.
  */
-static phys_addr_t calculate_entry(unsigned long addr_virt, unsigned int type)
+static inline phys_addr_t calculate_entry(unsigned long addr_virt, unsigned int type)
 {
 	phys_addr_t addr_phys;
 
@@ -96,6 +96,20 @@ static phys_addr_t calculate_entry(unsigned long addr_virt, unsigned int type)
 	addr_phys |= (type & TYPE_MASK);
 
 	return addr_phys;
+}
+
+/**
+ * get_virtual_from_entry - Inverse operation of <code>calculate_entry</code>.
+ * It will compute the start address of the page from an entry.
+ * @entry: an entry from SGT
+ *
+ * Return: The virtual page address associated the entry
+ */
+static inline void* get_virtual_from_entry(phys_addr_t entry)
+{
+	entry &= ~LINK_ENTRY;
+	entry <<= (PAGE_SHIFT - ADDR_SHIFT);
+	return phys_to_virt(entry);
 }
 
 /**
@@ -183,9 +197,7 @@ static void unreserve_entries(unsigned long table_addr_virt, unsigned int pages)
 			if ((page_addr_phys & LINK_ENTRY) == LINK_ENTRY) {
 				table_addr_virt += PAGE_SIZE;
 			} else {
-				page_addr_phys &= ~LINK_ENTRY;
-				page_addr_phys <<= ADDR_SHIFT;
-				page_addr_virt = phys_to_virt(page_addr_phys);
+				page_addr_virt = get_virtual_from_entry(page_addr_phys);
 				free_page((unsigned long) page_addr_virt);
 
 				pages--;
