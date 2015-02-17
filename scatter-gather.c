@@ -21,6 +21,7 @@
 
 #include <linux/module.h>
 #include <linux/debugfs.h>
+#include <linux/highmem.h>
 #include <linux/mm.h>
 #include <asm/uaccess.h>
 #include "sgt_ioctl.h"
@@ -295,6 +296,8 @@ static int reserve(uint64_t size, phys_addr_t *table_addr_phys)
 	if (result)
 		goto out;
 
+	/* Flush the dcache before proceeding */
+	__cpuc_flush_dcache_area((void *)table_addr_virt, PAGE_SIZE << order);
 	return 0;
 
 out:
