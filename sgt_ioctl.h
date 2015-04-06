@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Freescale Semiconductor, Inc.
+ * Copyright (C) 2014, 2015 Freescale Semiconductor, Inc.
  * All rights reserved.
  *
  * This software may be distributed under the terms of the
@@ -25,6 +25,7 @@
 struct sgt_buffer {
 	uint64_t address;
 	uint64_t size;
+	char     overwrite;
 };
 
 #define SGT_GET_MAX_SIZE	_IOW('Z', 80, struct sgt_buffer)

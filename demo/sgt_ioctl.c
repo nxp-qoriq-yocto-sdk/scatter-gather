@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <string.h>
 #include "sgt_ioctl.h"
 
 #define DEBUGFS_PATH	"/sys/kernel/debug"
@@ -49,6 +50,7 @@ int main(void)
 	}
 
 	/* Get available memory. */
+	memset(&buffer0, 0x0, sizeof(buffer0));
 	ret = ioctl(fd, SGT_GET_MAX_SIZE, &buffer0);
 	if (ret < 0) {
 		report_error("ioctl");
@@ -57,6 +59,7 @@ int main(void)
 	printf("Available memory: %lluMB\n", buffer0.size / (1024 * 1024));
 
 	/* Allocate small buffer - 50KB. */
+	memset(&buffer1, 0x0, sizeof(buffer1));
 	buffer1.size = 50 * KB;
 	ret = ioctl(fd, SGT_RESERVE, &buffer1);
 	if (ret < 0) {
@@ -66,6 +69,7 @@ int main(void)
 	printf("First table address: %llx\n", buffer1.address);
 
 	/* Allocate medium buffer - 20MB. */
+	memset(&buffer2, 0x0, sizeof(buffer2));
 	buffer2.size = 20 * MB;
 	ret = ioctl(fd, SGT_RESERVE, &buffer2);
 	if (ret < 0) {
@@ -75,6 +79,7 @@ int main(void)
 	printf("Second table address: %llx\n", buffer2.address);
 
 	/* Allocate large buffer - 400MB. */
+	memset(&buffer3, 0x0, sizeof(buffer3));
 	buffer3.size = 400 * MB;
 	ret = ioctl(fd, SGT_RESERVE, &buffer3);
 	if (ret < 0) {

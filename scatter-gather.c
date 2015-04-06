@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Freescale Semiconductor, Inc.
+ * Copyright (C) 2014. 2015 Freescale Semiconductor, Inc.
  * All rights reserved.
  *
  * This software may be distributed under the terms of the
@@ -27,14 +27,15 @@
 #include "sgt_ioctl.h"
 #include "sgt_list.h"
 
-#define ENTRIES_PER_TABLE	(PAGE_SIZE / sizeof(unsigned long))
+#define ENTRIES_PER_TABLE	(PAGE_SIZE / sizeof(uint32_t))
 
-#define LAST_ENTRY		1
-#define NORMAL_ENTRY	2
-#define LINK_ENTRY		3
+#define LAST_ENTRY			1
+#define NORMAL_ENTRY		2
+#define LINK_ENTRY			3
 
-#define ADDR_SHIFT		4
-#define TYPE_MASK		0x3
+#define ADDR_SHIFT			4
+#define TYPE_MASK			0x3
+#define END_OF_BUFFER_MASK	0xFFFFFFFF
 
 static struct dentry *sgt_debugfs_dir;
 
@@ -117,6 +118,9 @@ static inline void* get_virtual_from_entry(phys_addr_t entry)
  * reserve_entries - reserves memory for a table
  * @table_addr_virt: virtual starting address of the table
  * @pages: number of pages indexed by the table
+ * @overwrite: true - creates artificially an circular buffer by appending a
+ *             additional entry to table that points to the start address of the
+ *             table. This is a workaround for a hardware limitation.
  *
  * Walks the table, allocates pages and indexes them. The table walk stops when
  * all of the pages have been allocated. It always initializes an entry with 0,
@@ -125,11 +129,13 @@ static inline void* get_virtual_from_entry(phys_addr_t entry)
  *
  * Return: 0 or -ENOMEM, if any of the allocations fail.
  */
-static int reserve_entries(unsigned long table_addr_virt, unsigned int pages)
+static int reserve_entries(unsigned long table_addr_virt, unsigned int pages,
+	bool overwrite)
 {
 	unsigned int i, offset;
 	uint32_t *entry;
 	unsigned long page_addr_virt;
+	unsigned long table_start_addr = table_addr_virt;
 
 	while (pages)
 		for (i = 0; i < ENTRIES_PER_TABLE; i++) {
@@ -138,12 +144,16 @@ static int reserve_entries(unsigned long table_addr_virt, unsigned int pages)
 			*entry = 0;
 
 			if (pages == 1) {
-				page_addr_virt = __get_free_page(GFP_KERNEL);
-				if (!page_addr_virt)
-					return -ENOMEM;
+				if (overwrite) {
+					/* Create a circular buffer */
+					*entry = calculate_entry(table_start_addr, LINK_ENTRY);
+				} else {
+					page_addr_virt = __get_free_page(GFP_KERNEL);
+					if (!page_addr_virt)
+						return -ENOMEM;
 
-				*entry = calculate_entry(page_addr_virt,
-							LAST_ENTRY);
+					*entry = calculate_entry(page_addr_virt, LAST_ENTRY);
+				}
 				pages--;
 
 				break;
@@ -153,6 +163,12 @@ static int reserve_entries(unsigned long table_addr_virt, unsigned int pages)
 				page_addr_virt = __get_free_page(GFP_KERNEL);
 				if (!page_addr_virt)
 					return -ENOMEM;
+
+				/* Mark the end of the last page */
+				if (pages == 2 && overwrite) {
+					*((uint32_t *)(page_addr_virt + PAGE_SIZE - sizeof(uint32_t))) =
+						END_OF_BUFFER_MASK;
+				}
 
 				*entry = calculate_entry(page_addr_virt,
 							NORMAL_ENTRY);
@@ -183,6 +199,7 @@ static void unreserve_entries(unsigned long table_addr_virt, unsigned int pages)
 	uint32_t *entry;
 	phys_addr_t page_addr_phys;
 	void *page_addr_virt;
+	void *table_addr = (void *) table_addr_virt;
 
 	while (pages)
 		for (i = 0; i < ENTRIES_PER_TABLE; i++) {
@@ -197,6 +214,12 @@ static void unreserve_entries(unsigned long table_addr_virt, unsigned int pages)
 
 			if ((page_addr_phys & LINK_ENTRY) == LINK_ENTRY) {
 				table_addr_virt += PAGE_SIZE;
+				page_addr_virt = get_virtual_from_entry(page_addr_phys);
+				/* Detect a link to the first index page of the table */
+				if (table_addr == page_addr_virt) {
+					pages--;
+					break;
+				}
 			} else {
 				page_addr_virt = get_virtual_from_entry(page_addr_phys);
 				free_page((unsigned long) page_addr_virt);
@@ -270,20 +293,32 @@ static void unreserve_all(void)
  * reserve - reserves memory for a table
  * @size: storage size
  * @table_addr_phys: physical starting address of the table
+ * @overwrite: true - creates artificially an circular buffer by appending a
+ *             additional entry to table that points to the start address of the
+ *             table. This is a workaround for a hardware limitation.
  *
  * Return: 0 or -ENOMEM, if any of the allocations fail.
  */
-static int reserve(uint64_t size, phys_addr_t *table_addr_phys)
+static int reserve(uint64_t size, phys_addr_t *table_addr_phys, bool overwrite)
 {
 	unsigned int pages, tables, order;
 	unsigned long table_addr_virt;
 	int result;
+	struct page *mem_pages;
+	int i;
 
 	pages = calculate_pages(size);
+	if (overwrite)
+		pages++;
+
 	tables = calculate_tables(pages);
 	order = order_base_2(tables);
 
-	table_addr_virt = __get_free_pages(GFP_KERNEL, order);
+	mem_pages = alloc_pages(GFP_KERNEL, order);
+	if (!mem_pages)
+		return -ENOMEM;
+
+	table_addr_virt = (unsigned long) page_address(mem_pages);
 	if (!table_addr_virt)
 		return -ENOMEM;
 
@@ -292,12 +327,18 @@ static int reserve(uint64_t size, phys_addr_t *table_addr_phys)
 	if (result)
 		goto out;
 
-	result = reserve_entries(table_addr_virt, pages);
+	if (overwrite)
+		pages--;
+
+	result = reserve_entries(table_addr_virt, pages, overwrite);
 	if (result)
 		goto out;
 
 	/* Flush the dcache before proceeding */
-	__cpuc_flush_dcache_area((void *)table_addr_virt, PAGE_SIZE << order);
+	for (i = 0; i < pages; i++) {
+		flush_dcache_page(mem_pages + i);
+	}
+
 	return 0;
 
 out:
@@ -325,7 +366,7 @@ static long sgt_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (copy_from_user(&sgtb, argp, sizeof(*argp)))
 			return -EFAULT;
 
-		ret = reserve(sgtb.size, &table_addr_phys);
+		ret = reserve(sgtb.size, &table_addr_phys, sgtb.overwrite);
 		if (ret)
 			break;
 		sgtb.address = table_addr_phys;
