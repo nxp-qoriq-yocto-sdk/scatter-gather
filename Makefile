@@ -24,7 +24,7 @@ ccflags-y = -Wall -g
 obj-m = sgt.o
 sgt-objs = scatter-gather.o sgt_list.o
 
-KERNEL_SRC = /lib/modules/`uname -r`/build
+KERNEL_SRC ?= /lib/modules/`uname -r`/build
 SRC := $(shell pwd)
 
 .PHONY: build modules_install demo clean

@@ -335,7 +335,7 @@ static int reserve(uint64_t size, phys_addr_t *table_addr_phys, bool overwrite)
 		goto out;
 
 	/* Flush the dcache before proceeding */
-	for (i = 0; i < pages; i++) {
+	for (i = 0; i < tables; i++) {
 		flush_dcache_page(mem_pages + i);
 	}
 
