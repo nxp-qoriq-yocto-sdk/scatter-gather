@@ -20,6 +20,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/printk.h>
 #include <linux/debugfs.h>
 #include <linux/highmem.h>
 #include <linux/mm.h>
@@ -36,6 +37,17 @@
 #define ADDR_SHIFT			4
 #define TYPE_MASK			0x3
 #define END_OF_BUFFER_MASK	0xFFFFFFFF
+
+#ifdef DEBUG
+#define PRIx64 "llx"
+#define PRIx32 "x"
+#define LOG(format, ...)\
+	({\
+		pr_alert("[%s][%s] " format , "sgt", __func__, ##__VA_ARGS__);\
+	})
+#else
+#define LOG(format, ...)
+#endif
 
 static struct dentry *sgt_debugfs_dir;
 
@@ -147,12 +159,14 @@ static int reserve_entries(unsigned long table_addr_virt, unsigned int pages,
 				if (overwrite) {
 					/* Create a circular buffer */
 					*entry = calculate_entry(table_start_addr, LINK_ENTRY);
+					LOG("\tLink Entry = %" PRIx32 "\n", *entry);
 				} else {
 					page_addr_virt = __get_free_page(GFP_KERNEL);
 					if (!page_addr_virt)
 						return -ENOMEM;
 
 					*entry = calculate_entry(page_addr_virt, LAST_ENTRY);
+					LOG("\tEntry = %" PRIx32 ", [virt]%lx\n", *entry, page_addr_virt);
 				}
 				pages--;
 
@@ -172,11 +186,14 @@ static int reserve_entries(unsigned long table_addr_virt, unsigned int pages,
 
 				*entry = calculate_entry(page_addr_virt,
 							NORMAL_ENTRY);
+				LOG("\tEntry = %" PRIx32 ", [virt]%lx\n", *entry, page_addr_virt);
 				pages--;
 			} else {
+				/* Next table */
 				table_addr_virt += PAGE_SIZE;
 				*entry = calculate_entry(table_addr_virt,
 							LINK_ENTRY);
+				LOG("\tEntry = %" PRIx32 "\n", *entry);
 			}
 		}
 
@@ -222,6 +239,7 @@ static void unreserve_entries(unsigned long table_addr_virt, unsigned int pages)
 				}
 			} else {
 				page_addr_virt = get_virtual_from_entry(page_addr_phys);
+				LOG("Free page = [virt]%p [phys]0x%" PRIx64 "\n", page_addr_virt, page_addr_phys);
 				free_page((unsigned long) page_addr_virt);
 
 				pages--;
@@ -266,6 +284,8 @@ static int unreserve(phys_addr_t table_addr_phys)
 
 	table_addr_virt = (unsigned long) phys_to_virt(table_addr_phys);
 	unreserve_entries(table_addr_virt, pages);
+
+	LOG("Free 2^%u pages from %lx\n", order, table_addr_virt);
 	free_pages(table_addr_virt, order);
 
 	result = del_list_entry(table_addr_phys);
@@ -302,7 +322,7 @@ static void unreserve_all(void)
 static int reserve(uint64_t size, phys_addr_t *table_addr_phys, bool overwrite)
 {
 	unsigned int pages, tables, order;
-	unsigned long table_addr_virt;
+	unsigned long table_addr_virt, page_addr;
 	int result;
 	struct page *mem_pages;
 	int i;
@@ -322,6 +342,7 @@ static int reserve(uint64_t size, phys_addr_t *table_addr_phys, bool overwrite)
 	if (!table_addr_virt)
 		return -ENOMEM;
 
+	LOG("Allocated %u^2 pages starting from 0x%lx\n", order, table_addr_virt);
 	*table_addr_phys = virt_to_phys((void *) table_addr_virt);
 	result = add_list_entry(*table_addr_phys, size);
 	if (result)
@@ -330,6 +351,9 @@ static int reserve(uint64_t size, phys_addr_t *table_addr_phys, bool overwrite)
 	if (overwrite)
 		pages--;
 
+	LOG("Number of tables = %u\n", tables);
+	LOG("Table address = %" PRIx64 "\n", *table_addr_phys);
+
 	result = reserve_entries(table_addr_virt, pages, overwrite);
 	if (result)
 		goto out;
@@ -337,6 +361,12 @@ static int reserve(uint64_t size, phys_addr_t *table_addr_phys, bool overwrite)
 	/* Flush the dcache before proceeding */
 	for (i = 0; i < tables; i++) {
 		flush_dcache_page(mem_pages + i);
+
+		page_addr = (unsigned long) page_address(mem_pages + i);
+		if (!page_addr)
+			continue;
+
+		flush_icache_range(page_addr, page_addr + PAGE_SIZE);
 	}
 
 	return 0;
@@ -370,6 +400,7 @@ static long sgt_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (ret)
 			break;
 		sgtb.address = table_addr_phys;
+		LOG("Reserved address = %pa -- 0x%" PRIx64 "\n", &table_addr_phys, sgtb.address);
 
 		if (copy_to_user(argp, &sgtb, sizeof(*argp)))
 			return -EFAULT;
@@ -380,9 +411,11 @@ static long sgt_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return -EFAULT;
 
 		table_addr_phys = sgtb.address;
+		LOG("Unreserving address = 0x%" PRIx64 " -- %pa\n", sgtb.address, &table_addr_phys);
 		ret = unreserve(table_addr_phys);
 		break;
 	case SGT_UNRESERVE_ALL:
+		LOG("Unreserving all buffers");
 		unreserve_all();
 		break;
 	default:

@@ -42,6 +42,7 @@ int main(void)
 	int fd;
 	int ret;
 	struct sgt_buffer buffer0, buffer1, buffer2, buffer3;
+	int i;
 
 	fd = open(ABS_FILE_PATH, O_RDONLY);
 	if (fd < 0) {
@@ -57,6 +58,24 @@ int main(void)
 		return -1;
 	}
 	printf("Available memory: %lluMB\n", buffer0.size / (1024 * 1024));
+
+	/* Simulate default buffer for satrace */
+	for (i = 0; i < 100; i++) {
+		memset(&buffer1, 0x0, sizeof(buffer1));
+		buffer1.size = 0x4000;
+		ret = ioctl(fd, SGT_RESERVE, &buffer1);
+		if (ret < 0) {
+			report_error("ioctl");
+			return -1;
+		}
+
+		ret = ioctl(fd, SGT_UNRESERVE_ALL);
+		if (ret < 0) {
+			report_error("ioctl");
+			return -1;
+		}
+	}
+
 
 	/* Allocate small buffer - 50KB. */
 	memset(&buffer1, 0x0, sizeof(buffer1));

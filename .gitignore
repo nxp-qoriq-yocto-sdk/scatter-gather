@@ -1,0 +1,9 @@
+Module.symvers
+*.o
+*.cmd
+*.swp
+*.tmp_versions
+*.mod.c
+modules.order
+*.ko
+demo/sgt_ioctl
